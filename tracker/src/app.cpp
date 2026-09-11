@@ -600,9 +600,11 @@ void appOnEvent(MainLoopEventData eventData) {
     screenTouchTap(eventData.data.touch.x, eventData.data.touch.y);
     break;
   case MainLoopEvent::touchAdjust:
-    if (screenTouchAdjust(eventData.data.touch.x, eventData.data.touch.y)) {
-      appInput(1, keyEdit | eventData.data.touch.direction, 1);
-      appInput(0, 0, 0);
+    if (TouchAdjustResult adjust = screenTouchAdjust(eventData.data.touch.x, eventData.data.touch.y)) {
+      int direction = eventData.data.touch.direction;
+      if (adjust == touchAdjustFine)
+        direction = direction == keyUp ? keyRight : keyLeft;
+      appInput(1, keyEdit | direction, 1);
     }
     break;
   case MainLoopEvent::touchNavigate:

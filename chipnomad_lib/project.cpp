@@ -42,8 +42,6 @@ int fxModulationCount = sizeof(fxNamesModulation) / sizeof(FXName);
 FXGroup fxGroups[] = {
   {"Sequencer FX", fxNamesSequencer, 0, 8, InstrumentType::none},
   {"Track FX", fxNamesTrack, 0, 2, InstrumentType::none},
-  {"ADSR / Trigger FX", fxNamesEnvelope, 0, 7, InstrumentType::none},
-  {"Modulation FX", fxNamesModulation, 0, 5, InstrumentType::none},
   {"AY Classic FX", NULL, 0, 8, InstrumentType::AY1},
   {"AY Plus FX", NULL, 0, 8, InstrumentType::AY2},
   {"AYSample FX", NULL, 0, 8, InstrumentType::AYSample},
@@ -54,6 +52,8 @@ FXGroup fxGroups[] = {
   {"Plaits FX", NULL, 0, 7, InstrumentType::Plaits},
   {"Plaits-Alt FX", NULL, 0, 7, InstrumentType::PlaitsAlt},
   {"aChChid FX", NULL, 0, 8, InstrumentType::AChChid},
+  {"ADSR / Trigger FX", fxNamesEnvelope, 0, 7, InstrumentType::none},
+  {"Modulation FX", fxNamesModulation, 0, 5, InstrumentType::none},
 };
 int fxGroupCount = sizeof(fxGroups) / sizeof(FXGroup);
 
@@ -68,12 +68,12 @@ void fillFXNames() {
   // Fill counts in fxGroups array
   fxGroups[0].count = fxSequencerCount;
   fxGroups[1].count = fxTrackCount;
-  fxGroups[2].count = fxEnvelopeCount;
-  fxGroups[3].count = fxModulationCount;
+  fxGroups[12].count = fxEnvelopeCount;
+  fxGroups[13].count = fxModulationCount;
   // Instrument groups are materialized from the declarative catalogue.  The
   // editor still receives its established FXName view, without duplicating
   // family availability or labels here.
-  for (int group = 4; group < fxGroupCount; ++group) {
+  for (int group = 2; group < 12; ++group) {
     InstrumentType type = fxGroups[group].instType;
     const InstrumentDefinition* definition = getInstrumentDefinition(type);
     FXName* names = instrumentGroupNames[(int)type];

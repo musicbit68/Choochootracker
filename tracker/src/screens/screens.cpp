@@ -327,22 +327,24 @@ int screenTouchTap(int col, int row) {
   return 1;
 }
 
-int screenTouchAdjust(int col, int row) {
+TouchAdjustResult screenTouchAdjust(int col, int row) {
   int envelopeCol;
   if (screenTouchEnvelopeAt(col, row, &envelopeCol))
-    return touchScreenData->cursorRow == 9 && touchScreenData->cursorCol == envelopeCol;
+    return touchScreenData->cursorRow == 9 && touchScreenData->cursorCol == envelopeCol ? touchAdjustCoarse : touchAdjustNone;
   int targetCol, targetRow;
-  if (!screenTouchCellAt(col, row, &targetCol, &targetRow)) return 0;
+  if (!screenTouchCellAt(col, row, &targetCol, &targetRow)) return touchAdjustNone;
   // Tap selects the exact ADSR/Shape field. Once selected, accept a drag
   // anywhere across that envelope row so narrow values remain usable.
   if (currentScreen == &screenInstrument && targetRow >= 6)
-    return targetRow == touchScreenData->cursorRow;
+    return targetRow == touchScreenData->cursorRow ? touchAdjustCoarse : touchAdjustNone;
   // A finger is wider than compact tracker cells.  Permit a one-cell halo
   // around the focused value when starting a horizontal adjustment.
-  return targetCol >= touchScreenData->cursorCol - 1 &&
-         targetCol <= touchScreenData->cursorCol + 1 &&
-         targetRow >= touchScreenData->cursorRow - 1 &&
-         targetRow <= touchScreenData->cursorRow + 1;
+  if (targetCol < touchScreenData->cursorCol - 1 ||
+      targetCol > touchScreenData->cursorCol + 1 ||
+      targetRow < touchScreenData->cursorRow - 1 ||
+      targetRow > touchScreenData->cursorRow + 1) return touchAdjustNone;
+  return currentScreen == &screenPhrase && touchScreenData->cursorCol == 0 ?
+    touchAdjustFine : touchAdjustCoarse;
 }
 
 void screenDrawOverlays(ScreenData* screen) {

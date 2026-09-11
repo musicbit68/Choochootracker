@@ -123,7 +123,8 @@ void screenFullRedraw(ScreenData* screen);
 void screenDrawOverlays(ScreenData* screen);
 int screenInput(ScreenData* screen, int isKeyDown, int keys, int tapCount);
 int screenTouchTap(int col, int row);
-int screenTouchAdjust(int col, int row);
+enum TouchAdjustResult { touchAdjustNone, touchAdjustCoarse, touchAdjustFine };
+TouchAdjustResult screenTouchAdjust(int col, int row);
 
 // Utility functions
 void setCellColor(CellState state, int isEmpty, int hasContent);

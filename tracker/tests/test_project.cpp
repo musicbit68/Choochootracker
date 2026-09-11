@@ -114,6 +114,7 @@ TEST_CASE("modulation destination limits match every engine's routing") {
   CHECK(instrumentModDestinationMax(InstrumentType::BYOWTBL) == 33);
   CHECK(instrumentModDestinationMax(InstrumentType::Plaits) == 33);
   CHECK(instrumentModDestinationMax(InstrumentType::PlaitsAlt) == 33);
+  CHECK(instrumentModDestinationMax(InstrumentType::AChChid) == 27);
 }
 
 TEST_CASE("voice-post modulation destinations keep their labels") {
@@ -159,12 +160,27 @@ TEST_CASE("instrument catalogue covers every family and its routable motion FX")
   CHECK(fx == fxBIA);
 
   static const char* aChChidDestinations[] = {
-    "Off", "Volume", "Pitch", "Cutoff", "Reso", "EnvMod", "Decay", "Accent"
+    "Off", "Volume", "Pitch", "Cutoff", "Reso", "EnvMod", "Decay", "Accent", "Timbre", "Color"
   };
   const InstrumentDefinition* aChChid = getInstrumentDefinition(InstrumentType::AChChid);
-  REQUIRE(aChChid->destinationCount == 8);
+  REQUIRE(aChChid->destinationCount == 10);
   for (int destination = 0; destination < aChChid->destinationCount; ++destination)
     CHECK(std::strcmp(aChChid->destinations[destination].name, aChChidDestinations[destination]) == 0);
+  Instrument achchid;
+  getInstrumentFunctions(InstrumentType::AChChid).init(&achchid);
+  CHECK(instrumentMotionDestination(&achchid, 8, &fx, &base, &range, &value));
+  CHECK(fx == fxATM); CHECK(range == 16384);
+  CHECK(instrumentMotionDestination(&achchid, 9, &fx, &base, &range, &value));
+  CHECK(fx == fxACL); CHECK(range == 16384);
+}
+
+TEST_CASE("phrase FX groups put the active engine after Track FX") {
+  CHECK(std::strcmp(fxGroups[0].name, "Sequencer FX") == 0);
+  CHECK(std::strcmp(fxGroups[1].name, "Track FX") == 0);
+  CHECK(fxGroups[2].instType == InstrumentType::AY1);
+  CHECK(fxGroups[11].instType == InstrumentType::AChChid);
+  CHECK(std::strcmp(fxGroups[12].name, "ADSR / Trigger FX") == 0);
+  CHECK(std::strcmp(fxGroups[13].name, "Modulation FX") == 0);
 }
 
 TEST_CASE_FIXTURE(ProjectFixture, "failed VT2 import leaves its destination unchanged") {

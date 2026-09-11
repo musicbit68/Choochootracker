@@ -136,7 +136,6 @@ void mainLoopRun(void (*draw)(void), void (*onEvent)(MainLoopEventData eventData
   int mouseTouchButton = -1;
 #endif
 
-  extern void gfxSetButtonPressed(int buttonIndex, int pressed);
   auto releaseFingers = [&]() {
     for (int i = 0; i < (int)(sizeof(buttons) / sizeof(buttons[0])); ++i) {
       if (!buttonTouches[i]) continue;

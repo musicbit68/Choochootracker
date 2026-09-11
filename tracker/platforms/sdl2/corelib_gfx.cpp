@@ -124,7 +124,11 @@ static void layoutVirtualPad(void) {
   const int dpadSize = layoutW < layoutH ? btnSize * 5 / 4 : btnSize;
   const int dpadTotal = dpadSize * 3 + gap * 2;
   if (layoutW < layoutH) {
+#ifdef ANDROID_BUILD
     SDL_Rect canvas = getTrackerViewport();
+#else
+    SDL_Rect canvas = {0, 0, layoutW, layoutH};
+#endif
     int y = canvas.y + canvas.h + gap;
     int dpadY = y + (buttonH * 2 + gap - dpadTotal) / 2;
     dpadUpRect = (SDL_Rect){margin + dpadSize + gap, dpadY, dpadSize, dpadSize};
