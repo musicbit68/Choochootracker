@@ -11,6 +11,8 @@ struct PlaybackModState {
   int16_t p2Offset;
   int16_t p3Offset;
   int16_t p4Offset;
+  int16_t p5Offset;
+  const uint8_t (*ayWavetables)[32];
   uint8_t step; // Internal mod step, e.g. AHD/ADSR step. 0xff - modulation is stopped
   uint16_t counter; // Internal tick counter
   int16_t data1;  // ADSR: From
@@ -24,6 +26,8 @@ struct PlaybackModState {
 };
 
 void playbackModInit(PlaybackModState* state, Modulation* mod);
+void playbackModSetAYWavetables(PlaybackModState* state, const uint8_t (*ayWavetables)[32]);
+void playbackModRestart(PlaybackModState* state);
 void playbackModNext(PlaybackModState* state);
 void playbackModNextAudio(PlaybackModState* state, float sampleRate);
 void playbackModNoteOff(PlaybackModState* state);

@@ -296,6 +296,7 @@ struct Project {
 };
 
 extern char projectFileError[41];
+extern int projectFileVersion;
 
 // Fill FX names (call this first before loading any projects)
 void fillFXNames();

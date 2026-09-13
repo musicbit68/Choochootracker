@@ -456,11 +456,14 @@ LFO shapes:
 - ExpUp - exponential ramp up (exponential saw wave)
 - Square - square wave
 - Random - sample-and-hold random wave
+- Wavetable - reads one of the project's 32-step AY wavetables. Values `00` to `0F` map from `-100%` to `+100%` without interpolation.
 
 LFO trigger types:
 
 - Free - restarts the LFO only when the instrument changes
 - Retrig - restarts the LFO on every note
+- Phrase - restarts LFO and SLFO when playback enters a new phrase
+- Chain - restarts LFO and SLFO when playback enters a new chain
 - Hold - stops after 1 cycle and holds the last value
 - Once - stops after 1 cycle and returns to zero
 
@@ -619,13 +622,15 @@ Phrase and table FX can change a modulation slot without editing the instrument:
 
 The value is interpreted as a signed `8-bit` relative change (`01` adds `1`, `FF` subtracts `1`). Repeated commands accumulate. Effective values are clamped to their valid range.
 
-| Modulation type | P1 | P2 | P3 | P4 |
-|---|---|---|---|---|
-| ADSR | Attack | Decay | Sustain | Release |
-| AHD | Attack | Hold | Decay | Unused |
-| LFO | Shape | Trigger mode | Period | Unused |
-| SLFO | Shape | Trigger mode | Ticks | Multiplier |
-| FLFO | Shape | Trigger mode | Frequency (`1 Hz` to `20 kHz`) | Unused |
+`P5` is not exposed as a phrase or table FX. It is available as the `M1–M4 Wavetable` modulation destination, so one modulator can scan the AYWavetable index of another.
+
+| Modulation type | P1 | P2 | P3 | P4 | P5 when Shape is Wavetable |
+|---|---|---|---|---|---|
+| ADSR | Attack | Decay | Sustain | Release | Unused |
+| AHD | Attack | Hold | Decay | Unused | Unused |
+| LFO | Shape | Trigger mode | Period | Unused | AY wavetable index |
+| SLFO | Shape | Trigger mode | Ticks | Multiplier | AY wavetable index |
+| FLFO | Shape | Trigger mode | Frequency (`1 Hz` to `20 kHz`) | Unused | AY wavetable index |
 
 ### Braids FX
 

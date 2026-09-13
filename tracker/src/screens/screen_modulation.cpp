@@ -41,17 +41,20 @@
 #define COL_RIGHT_X   17
 #define COL_RIGHT_VAL 24
 
-#define ROW_TOTAL 14
-#define ROWS_PER_MOD 7
+#define ROW_TOTAL 16
+#define ROWS_PER_MOD 8
 
 static SelectionItem destinationCategories[5];
 static SelectionItem engineDestinations[32];
 static SelectionItem sendDestinations[2];
 static SelectionItem parameterDestinations[16];
+static SelectionItem wavetableDestinations[4];
 static SelectionItem envelopeDestinations[5];
 static SelectionItem triggerDestinations[2];
 static char parameterLabels[16][20];
 static char parameterHelpers[16][40];
+static char wavetableLabels[4][20];
+static char wavetableHelpers[4][40];
 static int editedModIndex;
 static int destinationButtonDown;
 
@@ -66,11 +69,11 @@ static void destinationCancelled() { screenSetup(&screenModulation, cInstrument)
 static const char* modulationParameterName(ModulationType type, int parameter) {
   static const char* adsr[] = {"Attack", "Decay", "Sustain", "Release"};
   static const char* ahd[] = {"Attack", "Hold", "Decay", ""};
-  static const char* lfo[] = {"Shape", "Trigger", "Rate", ""};
-  static const char* slfo[] = {"Shape", "Trigger", "Ticks", "Multiplier"};
-  static const char* flfo[] = {"Shape", "Trigger", "Frequency", ""};
-  static const char* stick[] = {"Axis", "", "", ""};
-  static const char* stickRate[] = {"Axis", "Ticks", "", ""};
+  static const char* lfo[] = {"Shape", "Trigger", "Rate", "", "Wavetable"};
+  static const char* slfo[] = {"Shape", "Trigger", "Ticks", "Multiplier", "Wavetable"};
+  static const char* flfo[] = {"Shape", "Trigger", "Frequency", "", "Wavetable"};
+  static const char* stick[] = {"Axis", "", "", "", ""};
+  static const char* stickRate[] = {"Axis", "Ticks", "", "", ""};
   const char* const* names = lfo;
   if (type == ModulationType::ADSR) names = adsr;
   else if (type == ModulationType::AHD) names = ahd;
@@ -104,6 +107,12 @@ static void openDestinationPopup(int modIndex) {
     snprintf(parameterHelpers[i], sizeof(parameterHelpers[i]), "Mod %d target: %s", mod + 1, parameter);
     parameterDestinations[i] = {parameterLabels[i], destination, NULL, 0, parameterHelpers[i]};
   }
+  for (int i = 0; i < 4; ++i) {
+    int destination = firstGeneric + genericModFirstP5 + i;
+    snprintf(wavetableLabels[i], sizeof(wavetableLabels[i]), "M%d Wavetable", i + 1);
+    snprintf(wavetableHelpers[i], sizeof(wavetableHelpers[i]), "Mod %d target: AY wavetable index", i + 1);
+    wavetableDestinations[i] = {wavetableLabels[i], destination, NULL, 0, wavetableHelpers[i]};
+  }
   static const char* envelopeNames[] = {"ATTACK", "DECAY", "SUSTAIN", "RELEASE", "SHAPE"};
   static const char* triggerNames[] = {"DECAY", "COLOR"};
   for (int i = 0; i < 5; ++i)
@@ -115,6 +124,7 @@ static void openDestinationPopup(int modIndex) {
   destinationCategories[categoryCount++] = {"ENGINE", -1, engineDestinations, functions.modDestinationsCount + 1};
   destinationCategories[categoryCount++] = {"FX SENDS", -1, sendDestinations, 2};
   destinationCategories[categoryCount++] = {"MODULATORS", -1, parameterDestinations, 16};
+  destinationCategories[categoryCount++] = {"LFO TABLES", -1, wavetableDestinations, 4};
   if (functions.supportsVoicePost) {
     destinationCategories[categoryCount++] = {"ADSR", -1, envelopeDestinations, 5};
     if (functions.supportsTrigger)
@@ -165,19 +175,19 @@ static ScreenData screenData = {
 
 // Map logical row to screen Y
 static int rowToY(int row) {
-  if (row < 7) return row + 2;   // Top block: y 2-8
-  return row + 3;                 // Bottom block: y 10-16
+  if (row < ROWS_PER_MOD) return row + 2;  // Top block: y 2-9
+  return row + 3;                            // Bottom block: y 11-18
 }
 
 // Map (col, row) to modulator index (0-3)
 static int getModIndex(int col, int row) {
-  if (row < 7) return col == 0 ? 0 : 2;  // Top: Mod1 (left), Mod3 (right)
+  if (row < ROWS_PER_MOD) return col == 0 ? 0 : 2;  // Top: Mod1 (left), Mod3 (right)
   return col == 0 ? 1 : 3;                // Bottom: Mod2 (left), Mod4 (right)
 }
 
 // Row within a modulator block (0-6)
 static int getModRow(int row) {
-  return row < 7 ? row : row - 7;
+  return row < ROWS_PER_MOD ? row : row - ROWS_PER_MOD;
 }
 
 static const char* modTypeName(ModulationType type) {
@@ -205,6 +215,7 @@ static const char* lfoShapeName(LFOShape shape) {
     case LFOShape::expUp:    return "ExpUp ";
     case LFOShape::square:   return "Square";
     case LFOShape::random:   return "Random";
+    case LFOShape::wavetable:return "WaveTb";
     default:               return "?     ";
   }
 }
@@ -215,6 +226,8 @@ static const char* lfoTrigName(LFOTrigger trig) {
     case LFOTrigger::retrig: return "Retrig";
     case LFOTrigger::hold:   return "Hold  ";
     case LFOTrigger::once:   return "Once  ";
+    case LFOTrigger::phrase: return "Phrase";
+    case LFOTrigger::chain:  return "Chain ";
     default:            return "?     ";
   }
 }
@@ -237,17 +250,20 @@ static const char* paramLabel(ModulationType type, int paramIdx) {
       if (paramIdx == 0) return "Shape";
       if (paramIdx == 1) return "Trig";
       if (paramIdx == 2) return "Period";
+      if (paramIdx == 3) return "WaveTb";
       break;
     case ModulationType::SLFO:
       if (paramIdx == 0) return "Shape";
       if (paramIdx == 1) return "Trig";
       if (paramIdx == 2) return "Ticks";
       if (paramIdx == 3) return "Mult";
+      if (paramIdx == 4) return "WaveTb";
       break;
     case ModulationType::FLFO:
       if (paramIdx == 0) return "Shape";
       if (paramIdx == 1) return "Trig";
       if (paramIdx == 2) return "Freq";
+      if (paramIdx == 3) return "WaveTb";
       break;
     case ModulationType::StickLinear:
       if (paramIdx == 0) return "Axis";
@@ -263,13 +279,13 @@ static const char* paramLabel(ModulationType type, int paramIdx) {
 }
 
 // How many parameter rows does this modulation type have?
-static int paramCount(ModulationType type) {
-  switch (type) {
+static int paramCount(const Modulation* mod) {
+  switch (mod->type) {
     case ModulationType::ADSR: return 4;
     case ModulationType::AHD:  return 3;
-    case ModulationType::LFO:  return 3;
-    case ModulationType::SLFO: return 4;
-    case ModulationType::FLFO: return 3;
+    case ModulationType::LFO:  return mod->p1 == static_cast<uint8_t>(LFOShape::wavetable) ? 4 : 3;
+    case ModulationType::SLFO: return mod->p1 == static_cast<uint8_t>(LFOShape::wavetable) ? 5 : 4;
+    case ModulationType::FLFO: return mod->p1 == static_cast<uint8_t>(LFOShape::wavetable) ? 4 : 3;
     case ModulationType::StickLinear: return 1;
     case ModulationType::StickRate: return 2;
     default:      return 0;
@@ -285,7 +301,7 @@ static int isCellValid(int col, int row) {
   int modIdx = getModIndex(col, row);
   Modulation* mod = &chipnomadState->project.instruments[cInstrument].modulation[modIdx];
   int paramIdx = modRow - 3;
-  return paramIdx < paramCount(mod->type);
+  return paramIdx < paramCount(mod);
 }
 
 static int getColumnCount(int row) {
@@ -301,7 +317,7 @@ static void drawStatic(void) {
   if (chipnomadState->project.instruments[cInstrument].type == InstrumentType::none) return;
 
   for (int block = 0; block < 2; block++) {
-    int baseY = block == 0 ? 2 : 10;
+    int baseY = block == 0 ? 2 : 11;
 
     gfxSetFgColor(cs.textTitles);
     gfxPrintf(COL_LEFT_X, baseY, "Mod%d", block == 0 ? 1 : 2);
@@ -374,7 +390,7 @@ static void drawField(int col, int row, CellState state) {
       break;
     default: {
       int paramIdx = modRow - 3;
-      if (paramIdx >= paramCount(mod->type)) break;
+      if (paramIdx >= paramCount(mod)) break;
 
       // Draw the label
       gfxSetFgColor(appSettings.colorScheme.textDefault);
@@ -398,7 +414,9 @@ static void drawField(int col, int row, CellState state) {
           if (mod->type == ModulationType::FLFO) gfxPrintf(valX, y, "%5.0f", powf(8000.0f, mod->p3 / 255.0f));
           else gfxPrint(valX, y, byteToHex(mod->p3));
         } else if (paramIdx == 3) {
-          gfxPrint(valX, y, byteToHex(mod->p4));
+          gfxPrint(valX, y, byteToHex(mod->type == ModulationType::SLFO ? mod->p4 : mod->p5));
+        } else if (paramIdx == 4) {
+          gfxPrint(valX, y, byteToHex(mod->p5));
         }
       } else if (mod->type == ModulationType::StickLinear || mod->type == ModulationType::StickRate) {
         if (paramIdx == 0) gfxPrint(valX, y, stickAxisName(mod->p1));
@@ -434,6 +452,7 @@ static int onEdit(int col, int row, enum CellEditAction action) {
         mod->p3 = (mod->type == ModulationType::ADSR) ? 255 :
                   (mod->type == ModulationType::FLFO ? 0 : (mod->type == ModulationType::SLFO ? 24 : 6));
         mod->p4 = mod->type == ModulationType::SLFO ? 4 : 0;
+        mod->p5 = 0;
       }
       if (oldType != type) screenFullRedraw(&screenData);
       break;
@@ -456,7 +475,7 @@ static int onEdit(int col, int row, enum CellEditAction action) {
       break;
     default: {
       int paramIdx = modRow - 3;
-      if (paramIdx >= paramCount(mod->type)) break;
+      if (paramIdx >= paramCount(mod)) break;
 
       if (mod->type == ModulationType::AHD || mod->type == ModulationType::ADSR) {
         uint8_t* params = &mod->p1;
@@ -478,7 +497,7 @@ static int onEdit(int col, int row, enum CellEditAction action) {
       } else if (mod->type == ModulationType::LFO || mod->type == ModulationType::SLFO || mod->type == ModulationType::FLFO) {
         if (paramIdx == 0) {
           handled = edit8noLast(action, &mod->p1, 1, 0, static_cast<uint8_t>(LFOShape::totalCount) - 1);
-          // No hint for LFO shape - not adding value
+          if (handled) screenFullRedraw(&screenData);
         } else if (paramIdx == 1) {
           handled = edit8noLast(action, &mod->p2, 1, 0, static_cast<uint8_t>(LFOTrigger::totalCount) - 1);
           // No hint for LFO trigger - not adding value
@@ -493,6 +512,10 @@ static int onEdit(int col, int row, enum CellEditAction action) {
         } else if (paramIdx == 3 && mod->type == ModulationType::SLFO) {
           handled = edit8noLast(action, &mod->p4, 1, 1, 64);
           if (handled) screenMessage(0, "%hhu x %hhu ticks", mod->p4, mod->p3);
+        } else if ((paramIdx == 3 && mod->type != ModulationType::SLFO) ||
+                   (paramIdx == 4 && mod->type == ModulationType::SLFO)) {
+          handled = edit8noLast(action, &mod->p5, 16, 0, 255);
+          if (handled) screenMessage(0, "AY wavetable %02X", mod->p5);
         }
       } else if (mod->type == ModulationType::StickLinear || mod->type == ModulationType::StickRate) {
         if (paramIdx == 0) {

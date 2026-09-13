@@ -174,6 +174,39 @@ TEST_CASE("instrument catalogue covers every family and its routable motion FX")
   CHECK(fx == fxACL); CHECK(range == 16384);
 }
 
+TEST_CASE("v4 projects preserve LFO wavetable settings") {
+  Project saved, loaded;
+  projectInit(&saved);
+  projectInit(&loaded);
+  getInstrumentFunctions(InstrumentType::AY2).init(&saved.instruments[0]);
+  Modulation& mod = saved.instruments[0].modulation[2];
+  mod.type = ModulationType::SLFO;
+  mod.p1 = static_cast<uint8_t>(LFOShape::wavetable);
+  mod.p2 = static_cast<uint8_t>(LFOTrigger::chain);
+  mod.p3 = 12;
+  mod.p4 = 8;
+  mod.p5 = 42;
+  const char* path = "build/tests/lfo_wavetable_v4.cct";
+  REQUIRE(projectSave(&saved, path) == 0);
+  INFO(projectFileError);
+  REQUIRE(projectLoad(&loaded, path) == 0);
+  CHECK(projectFileVersion == 4);
+  const Modulation& reloaded = loaded.instruments[0].modulation[2];
+  CHECK(reloaded.p1 == static_cast<uint8_t>(LFOShape::wavetable));
+  CHECK(reloaded.p2 == static_cast<uint8_t>(LFOTrigger::chain));
+  CHECK(reloaded.p5 == 42);
+}
+
+TEST_CASE("v3 projects default the LFO wavetable index to zero") {
+  Project project;
+  projectInit(&project);
+  REQUIRE(projectLoad(&project, "packaging/common/projects/alf dance.cct") == 0);
+  CHECK(projectFileVersion == 3);
+  for (int instrument = 0; instrument < PROJECT_MAX_INSTRUMENTS; ++instrument)
+    for (int mod = 0; mod < 4; ++mod)
+      CHECK(project.instruments[instrument].modulation[mod].p5 == 0);
+}
+
 TEST_CASE("phrase FX groups put the active engine after Track FX") {
   CHECK(std::strcmp(fxGroups[0].name, "Sequencer FX") == 0);
   CHECK(std::strcmp(fxGroups[1].name, "Track FX") == 0);

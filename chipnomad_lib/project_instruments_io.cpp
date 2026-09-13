@@ -354,14 +354,16 @@ static int loadModulation(FILE* file, Instrument* instrument) {
     snprintf(modPrefix, 32, "- Mod%d: ", i + 1);
 
     if (strncmp(line, modPrefix, strlen(modPrefix)) == 0) {
-      sscanf(line + strlen(modPrefix), "%hhu,%hhu,%hhd,%hhu,%hhu,%hhu,%hhu",
+      instrument->modulation[i].p5 = 0;
+      sscanf(line + strlen(modPrefix), "%hhu,%hhu,%hhd,%hhu,%hhu,%hhu,%hhu,%hhu",
         (uint8_t*)&instrument->modulation[i].type,
         &instrument->modulation[i].destination,
         &instrument->modulation[i].amount,
         &instrument->modulation[i].p1,
         &instrument->modulation[i].p2,
         &instrument->modulation[i].p3,
-        &instrument->modulation[i].p4);
+        &instrument->modulation[i].p4,
+        &instrument->modulation[i].p5);
       if (instrument->modulation[i].type == ModulationType::StickVelocity) {
         instrument->modulation[i].type = ModulationType::StickLinear;
       }
@@ -626,7 +628,7 @@ static int saveInstrumentPlaits(FILE* file, Instrument* instrument) {
 static int saveModulation(FILE* file, Instrument* instrument) {
   fprintf(file, "- Modulation:\n");
   for (int i = 0; i < 4; i++) {
-    fprintf(file, "- Mod%d: %hhu,%hhu,%hhd,%hhu,%hhu,%hhu,%hhu\n",
+    fprintf(file, "- Mod%d: %hhu,%hhu,%hhd,%hhu,%hhu,%hhu,%hhu,%hhu\n",
       i + 1,
       instrument->modulation[i].type,
       instrument->modulation[i].destination,
@@ -634,7 +636,8 @@ static int saveModulation(FILE* file, Instrument* instrument) {
       instrument->modulation[i].p1,
       instrument->modulation[i].p2,
       instrument->modulation[i].p3,
-      instrument->modulation[i].p4);
+      instrument->modulation[i].p4,
+      instrument->modulation[i].p5);
   }
   return 0;
 }

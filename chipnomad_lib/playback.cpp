@@ -329,18 +329,32 @@ static void initModulations(PlaybackState* state, int trackIdx, uint8_t oldInstr
   for (int i = 0; i < 4; i++) {
     const Modulation* mod = &mods[i];
 
-    // Check if this is an LFO with "free" trigger mode
-    // LFO parameters: p1=shape, p2=trigger, p3=period
-    int isLFOFree = ((mod->type == ModulationType::LFO ||
-                      mod->type == ModulationType::SLFO ||
-                      mod->type == ModulationType::FLFO) &&
-                     mod->p2 == static_cast<uint8_t>(LFOTrigger::free));
+    // Free and structural LFOs keep their phase across notes.
+    int keepsPhase = ((mod->type == ModulationType::LFO || mod->type == ModulationType::SLFO) &&
+                      (mod->p2 == static_cast<uint8_t>(LFOTrigger::free) ||
+                       mod->p2 == static_cast<uint8_t>(LFOTrigger::phrase) ||
+                       mod->p2 == static_cast<uint8_t>(LFOTrigger::chain))) ||
+                     (mod->type == ModulationType::FLFO && mod->p2 == static_cast<uint8_t>(LFOTrigger::free));
 
     // Initialize modulation if:
     // 1. Instrument changed (always reinit), OR
-    // 2. Not an LFO with free trigger mode (retrig/hold/once always reinit)
-    if (instrumentChanged || !isLFOFree) {
+    // 2. Not an LFO that keeps its phase (retrig/hold/once always reinit)
+    if (instrumentChanged || !keepsPhase) {
       playbackModInit(&track->note.modulation[i], (Modulation*)mod);
+    }
+    playbackModSetAYWavetables(&track->note.modulation[i], p->ayWavetables);
+  }
+}
+
+static void restartStructuralLFOs(PlaybackState* state, int trackIdx, int enteredPhrase, int enteredChain) {
+  PlaybackTrackState* track = &state->tracks[trackIdx];
+  for (int i = 0; i < 4; ++i) {
+    PlaybackModState* mod = &track->note.modulation[i];
+    if (!mod->modulation) continue;
+    uint8_t trigger = (uint8_t)clampInt16((int16_t)mod->modulation->p2 + mod->p2Offset, 0, 255);
+    if ((enteredPhrase && trigger == static_cast<uint8_t>(LFOTrigger::phrase)) ||
+        (enteredChain && trigger == static_cast<uint8_t>(LFOTrigger::chain))) {
+      playbackModRestart(mod);
     }
   }
 }
@@ -525,6 +539,7 @@ void readPhraseRow(PlaybackState* state, int trackIdx, int skipDelCheck) {
                   track->chainRow = 0;
                   track->phraseRow = 0;
                   resetTrackFXAuxState(state, trackIdx);
+                  restartStructuralLFOs(state, trackIdx, 1, 1);
                   readPhraseRow(state, trackIdx, skipDelCheck);
                   return;
                 }
@@ -603,6 +618,7 @@ void resetOffsets(PlaybackState* state, int trackIdx) {
     track->note.modulation[i].p2Offset = 0;
     track->note.modulation[i].p3Offset = 0;
     track->note.modulation[i].p4Offset = 0;
+    track->note.modulation[i].p5Offset = 0;
   }
 
   // Dispatch to chip-specific offset reset based on instrument type
@@ -682,17 +698,23 @@ static void processModulations(PlaybackState* state, int trackIdx) {
     PlaybackModState* mod = &track->note.modulation[source];
     if (!mod->modulation) continue;
     int generic = instrumentGenericModDestination(type, mod->modulation->destination);
-    if (generic < genericModFirstParameter || generic >= genericModDestinationCount) continue;
-    int parameter = generic - genericModFirstParameter;
-    int target = parameter / 4;
-    int targetParameter = parameter % 4;
+    int target, targetParameter;
+    if (generic >= genericModFirstParameter && generic < genericModDestinationCount) {
+      int parameter = generic - genericModFirstParameter;
+      target = parameter / 4;
+      targetParameter = parameter % 4;
+    } else if (generic >= genericModFirstP5 && generic < genericModTotalCount) {
+      target = generic - genericModFirstP5;
+      targetParameter = 4;
+    } else continue;
     if (target == source || !track->note.modulation[target].modulation) continue;
     int16_t offset = playbackModScaleToRange(mod->outValue, 255);
     PlaybackModState* targetMod = &track->note.modulation[target];
     if (targetParameter == 0) targetMod->p1Offset += offset;
     else if (targetParameter == 1) targetMod->p2Offset += offset;
     else if (targetParameter == 2) targetMod->p3Offset += offset;
-    else targetMod->p4Offset += offset;
+    else if (targetParameter == 3) targetMod->p4Offset += offset;
+    else targetMod->p5Offset += offset;
   }
 
   for (int i = 0; i < 4; i++) {
@@ -791,6 +813,8 @@ static void nextFrame(PlaybackState* state, int trackIdx, int chipIdx) {
 
 static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
   int stopped = 0;
+  int enteredPhrase = 0;
+  int enteredChain = 0;
   struct Project *p = state->p;
   PlaybackTrackState* track = &state->tracks[trackIdx];
 
@@ -808,6 +832,7 @@ static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
 
   if (track->phraseRow >= 16) {
     track->phraseRow = 0;
+    enteredPhrase = 1;
 
     // Check chain-level loop after phrase overflow
     if (state->loopRange.enabled && state->loopRange.level == 1 && track->loop &&
@@ -815,7 +840,9 @@ static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
         track->chainRow == state->loopRange.endChainRow) {
       track->chainRow = state->loopRange.startChainRow;
       track->phraseRow = state->loopRange.startPhraseRow;
+      enteredChain = 1;
       resetTrackFXAuxState(state, trackIdx);
+      restartStructuralLFOs(state, trackIdx, 1, 1);
       return stopped;
     }
 
@@ -833,7 +860,9 @@ static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
             track->songRow = state->loopRange.startSongRow;
             track->chainRow = state->loopRange.startChainRow;
             track->phraseRow = state->loopRange.startPhraseRow;
+            enteredChain = 1;
             resetTrackFXAuxState(state, trackIdx);
+            restartStructuralLFOs(state, trackIdx, 1, 1);
             return stopped;
           }
 
@@ -858,6 +887,7 @@ static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
             stopped = 1;
           } else {
             track->songRow = songRow;
+            enteredChain = 1;
           }
         } else {
           track->chainRow = chainRow;
@@ -878,6 +908,7 @@ static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
         stopped = 1;
       } else {
         track->chainRow = chainRow;
+        enteredChain = chainRow == 0;
       }
     }
     // Phrase playback
@@ -891,6 +922,7 @@ static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
     }
     // TODO: If in the future I will add NTH command from M8, this logic will need to be updated
     resetTrackFXAuxState(state, trackIdx);
+    if (!stopped) restartStructuralLFOs(state, trackIdx, enteredPhrase, enteredChain);
   }
 
   return stopped;
@@ -1099,6 +1131,8 @@ int playbackNextFrame(ChipNomadState* chipNomadState) {
       // Consume queued event
       track->queue.mode = PlaybackMode::none;
 
+      restartStructuralLFOs(state, trackIdx, track->mode != PlaybackMode::phraseRow,
+                            track->mode == PlaybackMode::song || track->mode == PlaybackMode::chain);
       skipZeroGrooveRows(state, trackIdx);
       readPhraseRow(state, trackIdx, 0);
     }

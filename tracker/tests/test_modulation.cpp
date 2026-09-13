@@ -28,7 +28,7 @@ void printModulationOutput(Modulation *mod, int frames, int noteOffFrame, int16_
   printf("Modulation Test: %s\n", label);
   printf("========================================\n");
   printf("Type: %d, Dest: %d, Amount: %d\n", mod->type, mod->destination, mod->amount);
-  printf("p1: %d, p2: %d, p3: %d, p4: %d\n", mod->p1, mod->p2, mod->p3, mod->p4);
+  printf("p1: %d, p2: %d, p3: %d, p4: %d, p5: %d\n", mod->p1, mod->p2, mod->p3, mod->p4, mod->p5);
   printf("Max Amplitude: %d\n", maxAmplitude);
   printf("----------------------------------------\n");
   printf("Frame | Step | Counter | OutValue | Scaled\n");
@@ -1459,6 +1459,61 @@ TEST_CASE("test_live_stick_modulation_sources_and_rate_reset") {
   state.tracks[0].mode = PlaybackMode::stopped;
   playbackUpdateLiveStickModulation(&state, axes, 1);
   CHECK(state.liveStickRate[0][0] == 0);
+}
+
+TEST_CASE("LFO wavetable reads the selected table in 32 steps") {
+  uint8_t wavetables[256][32] = {};
+  wavetables[3][0] = 0;
+  wavetables[3][16] = 15;
+  Modulation mod = {.type = ModulationType::LFO, .amount = 127,
+                    .p1 = static_cast<uint8_t>(LFOShape::wavetable), .p3 = 32, .p5 = 3};
+  PlaybackModState state;
+  playbackModInit(&state, &mod);
+  playbackModSetAYWavetables(&state, wavetables);
+
+  playbackModNext(&state);
+  CHECK(state.outValue == -32385);
+  state.counter = 16;
+  playbackModNext(&state);
+  CHECK(state.outValue == 32385);
+  wavetables[4][0] = 15;
+  state.counter = 0;
+  state.p5Offset = 1;
+  playbackModNext(&state);
+  CHECK(state.outValue == 32385);
+}
+
+TEST_CASE("FLFO wavetable reads the selected table") {
+  uint8_t wavetables[256][32] = {};
+  wavetables[9][0] = 0;
+  wavetables[9][16] = 15;
+  Modulation mod = {.type = ModulationType::FLFO, .amount = 127,
+                    .p1 = static_cast<uint8_t>(LFOShape::wavetable), .p5 = 9};
+  PlaybackModState state;
+  playbackModInit(&state, &mod);
+  playbackModSetAYWavetables(&state, wavetables);
+
+  playbackModNextAudio(&state, 32.0f);
+  CHECK(state.outValue == -32385);
+  state.phase = 0.5f;
+  playbackModNextAudio(&state, 32.0f);
+  CHECK(state.outValue == 32385);
+}
+
+TEST_CASE("structural LFO triggers restart only LFO and SLFO state") {
+  Modulation mod = {.type = ModulationType::SLFO, .amount = 127,
+                    .p1 = static_cast<uint8_t>(LFOShape::tri),
+                    .p2 = static_cast<uint8_t>(LFOTrigger::phrase), .p3 = 12, .p4 = 4};
+  PlaybackModState state;
+  playbackModInit(&state, &mod);
+  state.counter = 31;
+  state.step = 0xff;
+  state.outValue = 123;
+
+  playbackModRestart(&state);
+  CHECK(state.counter == 0);
+  CHECK(state.step == 0);
+  CHECK(state.outValue == 0);
 }
 
 // Tests are run automatically by doctest

@@ -355,7 +355,8 @@ static const char* genericModName(int index) {
     "M2 P1", "M2 P2", "M2 P3", "M2 P4",
     "M3 P1", "M3 P2", "M3 P3", "M3 P4",
     "M4 P1", "M4 P2", "M4 P3", "M4 P4",
-    "ADSR A", "ADSR D", "ADSR S", "ADSR R", "ADSR Shape", "Trig D", "Trig C"
+    "ADSR A", "ADSR D", "ADSR S", "ADSR R", "ADSR Shape", "Trig D", "Trig C",
+    "M1 P5", "M2 P5", "M3 P5", "M4 P5"
   };
   return index >= 0 && index < genericModTotalCount ? names[index] : "Misc";
 }
@@ -367,7 +368,7 @@ int instrumentGenericModDestination(InstrumentType type, int destination) {
 
 int instrumentModDestinationMax(InstrumentType type) {
   InstrumentFunctions functions = getInstrumentFunctions(type);
-  int genericCount = functions.supportsVoicePost ? genericModTotalCount : genericModDestinationCount;
+  int genericCount = functions.supportsVoicePost ? genericModTotalCount : genericModFirstP5 + 4;
   return functions.modDestinationsCount + genericCount;
 }
 

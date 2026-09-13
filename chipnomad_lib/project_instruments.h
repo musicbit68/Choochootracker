@@ -56,6 +56,7 @@ enum class LFOShape : uint8_t {
   expUp = 7,
   square = 8,
   random = 9,
+  wavetable = 10,
   totalCount,
 };
 
@@ -64,6 +65,8 @@ enum class LFOTrigger : uint8_t {
   retrig = 1,
   hold = 2,
   once = 3,
+  phrase = 4,
+  chain = 5,
   totalCount,
 };
 
@@ -75,6 +78,7 @@ struct Modulation {
   uint8_t p2; // ADSR: D, AHD: H, LFO: Trig
   uint8_t p3; // ADSR: S, AHD: D, LFO: Period
   uint8_t p4; // ADSR: R, AHD: -, LFO: -, SLFO: multiplier
+  uint8_t p5; // LFO/SLFO/FLFO Wavetable: AY wavetable index
 };
 
 // AY Instruments
@@ -313,7 +317,8 @@ enum GenericModDestination {
   genericModEnvelopeShape,
   genericModTriggerDecay,
   genericModTriggerColor,
-  genericModTotalCount,
+  genericModFirstP5,
+  genericModTotalCount = genericModFirstP5 + 4,
 };
 
 #endif // __CHIPNOMAD_LIB__PROJECT_INSTRUMENTS_H__

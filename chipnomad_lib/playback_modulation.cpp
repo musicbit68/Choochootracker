@@ -15,9 +15,16 @@
 #define GET_P2(state) clampInt16((int16_t)(state)->modulation->p2 + (state)->p2Offset, 0, 255)
 #define GET_P3(state) clampInt16((int16_t)(state)->modulation->p3 + (state)->p3Offset, 0, 255)
 #define GET_P4(state) clampInt16((int16_t)(state)->modulation->p4 + (state)->p4Offset, 0, 255)
+#define GET_P5(state) clampInt16((int16_t)(state)->modulation->p5 + (state)->p5Offset, 0, 255)
 #define GET_TYPE(state) ((state)->modulation->type)
 #define GET_AMOUNT(state) clampInt16((int16_t)(state)->modulation->amount + (state)->amountOffset, -128, 127)
 #define GET_DESTINATION(state) ((state)->modulation->destination)
+
+static int16_t ayWavetableValue(const PlaybackModState* state, uint8_t position) {
+  if (!state->ayWavetables) return 0;
+  uint8_t value = state->ayWavetables[GET_P5(state)][position & 0x1f] & 0x0f;
+  return (int16_t)((int32_t)value * (2 * MOD_MAX_RANGE) / 15 - MOD_MAX_RANGE);
+}
 
 static void handleADSR(PlaybackModState* state) {
   // step: 0 - Attack, 1 - Decay, 2 - Sustain, 3 - Release
@@ -166,8 +173,8 @@ static void handleAHDnoteOff(PlaybackModState* state) {
 
 static void handleLFO(PlaybackModState* state, uint16_t period) {
   // LFO parameters:
-  // p1: shape (0-7)
-  // p2: trigger mode (0-3)
+  // p1: shape
+  // p2: trigger mode
   // p3: period in ticks
   // counter: current position in cycle
   // step: 0 = running, 0xff = stopped (for lfoOnce and lfoHold)
@@ -266,6 +273,10 @@ static void handleLFO(PlaybackModState* state, uint16_t period) {
       break;
     }
 
+    case LFOShape::wavetable:
+      envelopeValue = ayWavetableValue(state, (uint8_t)(state->counter * 32 / period));
+      break;
+
     default:
       envelopeValue = 0;
       break;
@@ -308,6 +319,8 @@ void playbackModInit(PlaybackModState* state, Modulation* mod) {
   state->p2Offset = 0;
   state->p3Offset = 0;
   state->p4Offset = 0;
+  state->p5Offset = 0;
+  state->ayWavetables = NULL;
   state->step = 0;
   state->counter = 0;
   state->data1 = 0;
@@ -333,15 +346,29 @@ void playbackModInit(PlaybackModState* state, Modulation* mod) {
   }
 }
 
+void playbackModSetAYWavetables(PlaybackModState* state, const uint8_t (*ayWavetables)[32]) {
+  state->ayWavetables = ayWavetables;
+}
+
+void playbackModRestart(PlaybackModState* state) {
+  if (!state->modulation ||
+      (GET_TYPE(state) != ModulationType::LFO && GET_TYPE(state) != ModulationType::SLFO)) return;
+  state->counter = 0;
+  state->step = 0;
+  state->outValue = 0;
+}
+
 void playbackModNext(PlaybackModState* state) {
   // Check if type or LFO trigger mode changed - reinitialize if so
   ModulationType currentType = GET_TYPE(state);
   uint8_t currentP2 = GET_P2(state);
 
   if (currentType != state->cachedType ||
-      (currentType == ModulationType::LFO && currentP2 != state->cachedP2)) {
+      ((currentType == ModulationType::LFO || currentType == ModulationType::SLFO) && currentP2 != state->cachedP2)) {
     // Type or LFO trigger mode changed - reinitialize
+    const uint8_t (*ayWavetables)[32] = state->ayWavetables;
     playbackModInit(state, (Modulation*)state->modulation);
+    playbackModSetAYWavetables(state, ayWavetables);
     // Note: After reinit, we still need to process this frame, so continue below
   }
 
@@ -393,6 +420,7 @@ void playbackModNextAudio(PlaybackModState* state, float sampleRate) {
     case LFOShape::rampUp: value = phase; break;
     case LFOShape::uniTri: value = phase < 0.5f ? phase * 2.0f : 2.0f - phase * 2.0f; break;
     case LFOShape::uniSin: value = (1.0f - cosf(phase * 6.2831853f)) * 0.5f; break;
+    case LFOShape::wavetable: value = ayWavetableValue(state, (uint8_t)(phase * 32.0f)) / MOD_MAX_RANGE_F; break;
     default: value = phase < 0.25f ? phase * 4.0f : (phase < 0.75f ? 2.0f - phase * 4.0f : phase * 4.0f - 4.0f); break;
   }
   state->outValue = (int16_t)(value * MOD_MAX_RANGE_F * GET_AMOUNT(state) / 127.0f);
