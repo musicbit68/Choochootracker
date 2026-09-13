@@ -232,8 +232,8 @@ static int editCell(int col, int row, CellEditAction action) {
     } else if (phraseRows[row].note != NOTE_OFF) {
       handled = edit8withLimit(action, &phraseRows[row].note, &lastNote, chipnomadState->project.pitchTable.octaveSize, chipnomadState->project.pitchTable.length - 1);
       if (handled) {
-        lastInstrument = phraseRows[row].instrument;
-        lastVolume = phraseRows[row].volume;
+        if (phraseRows[row].instrument != EMPTY_VALUE_8) lastInstrument = phraseRows[row].instrument;
+        if (phraseRows[row].volume != EMPTY_VALUE_8) lastVolume = phraseRows[row].volume;
       }
     }
     if (handled) {

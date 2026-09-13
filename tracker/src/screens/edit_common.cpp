@@ -92,6 +92,7 @@ int edit8withLimit(CellEditAction action, uint8_t* value, uint8_t* lastValue, ui
   if (value16 == EMPTY_VALUE_8) {
     value16 = EMPTY_VALUE_16;
   }
+  if (lastValue16 > max) lastValue16 = max;
 
   int handled = edit16withLimit(action, &value16, &lastValue16, bigStep, max);
 

@@ -25,6 +25,15 @@ struct EditCommonFixture {
   ~EditCommonFixture() = default;
 };
 
+TEST_CASE("edit8withLimit restores a valid cached value") {
+  uint8_t value = EMPTY_VALUE_8;
+  uint8_t lastValue = EMPTY_VALUE_8;
+
+  CHECK(edit8withLimit(CellEditAction::tap, &value, &lastValue, 16, 15) == 1);
+  CHECK(value == 15);
+  CHECK(lastValue == 15);
+}
+
 // applySongMoveDown tests
 
 TEST_CASE_FIXTURE(EditCommonFixture, "moveDown: single cell") {

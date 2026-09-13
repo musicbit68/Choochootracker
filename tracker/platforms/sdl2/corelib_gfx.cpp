@@ -350,9 +350,11 @@ static void createFontTexture(void) {
   SDL_SetRenderTarget(renderer, NULL);
 }
 
-// FIXME: On RG35XX+, the SDL2 seems to be built without haptic
-// support enabled, so SDL_INIT_EVERYTHING will fail.
-#if defined(PORTMASTER_BUILD) || defined(WEB_BUILD)
+// Some PortMaster SDL2 builds omit haptic and sensor support (including
+// TrimUI Brick's NextUI build), so SDL_INIT_EVERYTHING would fail.
+#if defined(PORTMASTER_BUILD)
+#define SDL_INIT_FLAGS (SDL_INIT_EVERYTHING & ~SDL_INIT_HAPTIC & ~SDL_INIT_SENSOR)
+#elif defined(WEB_BUILD)
 #define SDL_INIT_FLAGS (SDL_INIT_EVERYTHING & ~SDL_INIT_HAPTIC)
 #else
 #define SDL_INIT_FLAGS (SDL_INIT_EVERYTHING)
@@ -946,6 +948,18 @@ static void drawStick(SDL_Rect* rect, int axis) {
   int knobY = cy - (int)(vpadStickAxes[axis] * (r - knob));
   drawFilledCircle(knobX, knobY, knob, colors.textDefault, 255);
 }
+
+static void clearHUDBackground(void) {
+  const SDL_Rect canvas = getTrackerViewport();
+  const SDL_Rect areas[] = {
+    {0, 0, physicalW, canvas.y},
+    {0, canvas.y + canvas.h, physicalW, physicalH - canvas.y - canvas.h},
+    {0, canvas.y, canvas.x, canvas.h},
+    {canvas.x + canvas.w, canvas.y, physicalW - canvas.x - canvas.w, canvas.h},
+  };
+  setColor(appSettings.colorScheme.background);
+  SDL_RenderFillRects(renderer, areas, sizeof(areas) / sizeof(*areas));
+}
 #endif
 #endif
 
@@ -964,6 +978,7 @@ void gfxDrawHUD(void) {
   // The tracker is a centered 640x480 canvas; controls are a physical overlay,
   // matching the Web controls placed outside that canvas.
   SDL_RenderSetLogicalSize(renderer, physicalW, physicalH);
+  clearHUDBackground();
 #endif
 
   drawDpad();
