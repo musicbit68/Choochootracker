@@ -8,63 +8,71 @@ permissions:
 
 jobs:
   build-portmaster:
-    name: Build ARM64 PortMaster package
+    name: Build PortMaster ARM64 package
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Install AArch64 toolchain and dependencies
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pull PortMaster AArch64 build environment
         run: |
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update
-
-          sudo apt-get install -y \
-            g++-aarch64-linux-gnu \
-            binutils-aarch64-linux-gnu \
-            pkg-config \
-            zip \
-            make
-
-          sudo apt-get install -y \
-            libsdl2-dev:arm64
-
-      - name: Verify build tools
-        run: |
-          aarch64-linux-gnu-g++ --version
-          aarch64-linux-gnu-strip --version
-          pkg-config --version
-          pkg-config --modversion sdl2
+          docker pull \
+            --platform=linux/arm64 \
+            ghcr.io/monkeyx-net/portmaster-build-templates/portmaster-builder:aarch64-latest
 
       - name: Build PortMaster package
-        working-directory: tracker
-        env:
-          PKG_CONFIG_LIBDIR: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
         run: |
-          make -j2 -f Makefile.portmaster PortMaster-deploy
+          docker run --rm \
+            --platform=linux/arm64 \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            ghcr.io/monkeyx-net/portmaster-build-templates/portmaster-builder:aarch64-latest \
+            bash -c '
+              set -e
 
-      - name: Verify package
+              echo "========================================"
+              echo "PortMaster AArch64 build environment"
+              echo "========================================"
+
+              uname -m
+              gcc --version
+              g++ --version
+
+              echo
+              echo "========================================"
+              echo "Building ChooChooTracker"
+              echo "========================================"
+
+              cd /workspace/tracker
+
+              make -j2 -f Makefile.portmaster PortMaster-deploy
+            '
+
+      - name: Verify PortMaster package
         run: |
+          echo "Checking build output..."
+
           test -f releases/choochootracker.zip
-          test -f tracker/build/choochootracker.aarch64
 
+          echo
           echo "========================================"
-          echo "PortMaster package created successfully"
+          echo "BUILD SUCCESSFUL"
           echo "========================================"
+
           ls -lh releases/choochootracker.zip
-          ls -lh tracker/build/choochootracker.aarch64
 
-      - name: Upload PortMaster ZIP
+      - name: Upload PortMaster package
         uses: actions/upload-artifact@v4
         with:
           name: choochootracker-portmaster
           path: releases/choochootracker.zip
-          if-no-files-found: error
-
-      - name: Upload ARM64 executable
-        uses: actions/upload-artifact@v4
-        with:
-          name: choochootracker-aarch64
-          path: tracker/build/choochootracker.aarch64
           if-no-files-found: error
