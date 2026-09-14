@@ -10,6 +10,7 @@
 //
 
 static int moveToNextPhraseRow(PlaybackState* state, int trackIdx);
+static int skipZeroGrooveRows(PlaybackState* state, int trackIdx);
 
 static const uint8_t speedNumerator[17] = {
   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 4, 8, 3, 5, 6, 7
@@ -811,6 +812,36 @@ static void nextFrame(PlaybackState* state, int trackIdx, int chipIdx) {
   }
 }
 
+static int activateLiveQueue(PlaybackState* state, int trackIdx) {
+  PlaybackTrackState* track = &state->tracks[trackIdx];
+  Project* p = state->p;
+
+  if (track->queue.mode != PlaybackMode::live) return 0;
+  if (track->queue.songRow < 0 || track->queue.songRow >= PROJECT_MAX_LENGTH ||
+      track->queue.chainRow < 0 || track->queue.chainRow >= 16) {
+    track->queue.mode = PlaybackMode::none;
+    return 0;
+  }
+
+  int chain = p->song[track->queue.songRow][trackIdx];
+  if (chain == EMPTY_VALUE_16 ||
+      p->chains[chain].rows[track->queue.chainRow].phrase == EMPTY_VALUE_16) {
+    track->queue.mode = PlaybackMode::none;
+    return 0;
+  }
+
+  track->songRow = track->queue.songRow;
+  track->chainRow = track->queue.chainRow;
+  track->phraseRow = 0;
+  track->loop = 1;
+  track->queue.mode = PlaybackMode::none;
+  resetTrackFXAuxState(state, trackIdx);
+  restartStructuralLFOs(state, trackIdx, 1, 1);
+  skipZeroGrooveRows(state, trackIdx);
+  readPhraseRow(state, trackIdx, 0);
+  return 1;
+}
+
 static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
   int stopped = 0;
   int enteredPhrase = 0;
@@ -894,6 +925,43 @@ static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
         }
       } else {
         resetTrack(state, trackIdx);
+      }
+    }
+    // Live playback: each track owns an independently selected Chain. A
+    // phrase cue switches at every phrase boundary; a normal cue waits for
+    // the end of the current Chain. With no cue pending, the selected Chain
+    // advances normally through all of its phrases and loops at its end.
+    else if (track->mode == PlaybackMode::live) {
+      // PHRASE CUE takes over at the current phrase boundary. This check is
+      // deliberately first so the cue can also fire when this boundary is
+      // simultaneously the end of the current Chain.
+      if (track->queue.mode == PlaybackMode::live &&
+          track->queue.liveCueMode == LiveCueMode::phrase) {
+        if (activateLiveQueue(state, trackIdx)) {
+          enteredChain = 1;
+        }
+      } else {
+        int chain = p->song[track->songRow][trackIdx];
+        if (chain == EMPTY_VALUE_16) {
+          resetTrack(state, trackIdx);
+        } else {
+          int chainRow = track->chainRow + 1;
+          if (chainRow >= 16 || p->chains[chain].rows[chainRow].phrase == EMPTY_VALUE_16) {
+            // The current Chain has ended. A normal cue gets priority over
+            // looping back to its first Chain row.
+            if (activateLiveQueue(state, trackIdx)) {
+              enteredChain = 1;
+            } else {
+              track->chainRow = 0;
+              enteredChain = 1;
+            }
+          } else {
+            // Continue to the next Phrase in the current Chain. A pending
+            // normal cue remains queued until the Chain actually ends.
+            track->chainRow = chainRow;
+            enteredChain = 1;
+          }
+        }
       }
     }
     // Chain playback
@@ -1049,6 +1117,39 @@ void playbackStartPhraseRow(PlaybackState* state, int trackIdx, PhraseRow* phras
   track->queue.mode = PlaybackMode::phraseRow;
   track->songRow = 0;
   track->currentPhraseRow = *phraseRow;
+}
+
+void playbackLiveChain(PlaybackState* state, int trackIdx, int songRow, int chainRow, LiveCueMode cueMode) {
+  if (trackIdx < 0 || trackIdx >= state->p->tracksCount ||
+      songRow < 0 || songRow >= PROJECT_MAX_LENGTH || chainRow < 0 || chainRow >= 16) return;
+
+  PlaybackTrackState* track = &state->tracks[trackIdx];
+  Project* p = state->p;
+  int chain = p->song[songRow][trackIdx];
+
+  if (chain == EMPTY_VALUE_16 ||
+      p->chains[chain].rows[chainRow].phrase == EMPTY_VALUE_16) return;
+
+  // In LIVE mode a playing track never gets interrupted. A new selection is
+  // stored as a chain-boundary cue. A stopped track can start immediately.
+  if (track->mode == PlaybackMode::live && track->songRow != EMPTY_VALUE_16) {
+    track->queue.mode = PlaybackMode::live;
+    track->queue.songRow = songRow;
+    track->queue.chainRow = chainRow;
+    track->queue.phraseRow = 0;
+    track->queue.loop = 1;
+    track->queue.liveCueMode = cueMode;
+    return;
+  }
+
+  if (track->mode != PlaybackMode::stopped) return;
+
+  track->queue.mode = PlaybackMode::live;
+  track->queue.songRow = songRow;
+  track->queue.chainRow = chainRow;
+  track->queue.phraseRow = 0;
+  track->queue.loop = 1;
+  track->queue.liveCueMode = cueMode;
 }
 
 void playbackQueuePhrase(PlaybackState* state, int trackIdx, int songRow, int chainRow) {

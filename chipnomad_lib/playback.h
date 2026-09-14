@@ -9,6 +9,11 @@
 
 struct ChipNomadState;
 
+enum class LiveCueMode {
+  chain,  // Switch at the end of the currently playing Chain
+  phrase, // Switch at the end of the currently playing Phrase
+};
+
 enum class PlaybackMode {
   none, // For queue
   stopped,
@@ -17,6 +22,7 @@ enum class PlaybackMode {
   phrase,
   phraseRow,
   loop,
+  live, // Live mode: independently selected chain per track
 };
 
 struct PlaybackTableState {
@@ -60,6 +66,7 @@ struct PlaybackTrackQueue {
   int chainRow;
   int phraseRow;
   int loop;
+  LiveCueMode liveCueMode;
 };
 
 struct PlaybackTrackState {
@@ -213,6 +220,7 @@ void playbackStartPhrase(PlaybackState* state, int trackIdx, int songRow, int ch
  * @param phraseRow Phrase row data to play
  */
 void playbackStartPhraseRow(PlaybackState* state, int trackIdx, PhraseRow* phraseRow);
+void playbackLiveChain(PlaybackState* state, int trackIdx, int songRow, int chainRow, LiveCueMode cueMode = LiveCueMode::chain);
 
 /**
  * Queues a phrase for playback on a specific track

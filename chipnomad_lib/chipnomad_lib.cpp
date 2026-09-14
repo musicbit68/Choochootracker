@@ -112,6 +112,7 @@ class AudioCommandQueue {
         case kStartChain: playbackStartChain(playback, command.a, command.b, command.c, command.d); break;
         case kStartPhrase: playbackStartPhrase(playback, command.a, command.b, command.c, command.d); break;
         case kStartPhraseRow: playbackStartPhraseRow(playback, command.a, const_cast<PhraseRow*>(&command.row)); break;
+        case kLiveChain: playbackLiveChain(playback, command.a, command.b, command.c, command.d ? LiveCueMode::phrase : LiveCueMode::chain); break;
         case kQueuePhrase: playbackQueuePhrase(playback, command.a, command.b, command.c); break;
         case kPreviewNote: playbackPreviewNote(playback, command.a, (uint8_t)command.b, (uint8_t)command.c); break;
         case kStopPreview: playbackStopPreview(playback, command.a); break;
@@ -152,7 +153,7 @@ class AudioCommandQueue {
   template <typename T> struct Slot { T value; std::atomic<int> state{kFree}; };
   struct Settings { uint64_t trackMask = ~UINT64_C(0); LoopRange loopRange{}; uint8_t loopDirty = 0; };
   struct AudioCommand { uint8_t type; int a, b, c, d; PhraseRow row; };
-  enum CommandType { kStartSong, kStartChain, kStartPhrase, kStartPhraseRow, kQueuePhrase, kPreviewNote, kStopPreview, kClearTrackFX };
+  enum CommandType { kStartSong, kStartChain, kStartPhrase, kStartPhraseRow, kQueuePhrase, kPreviewNote, kStopPreview, kClearTrackFX, kLiveChain };
   static constexpr unsigned int kSlotCount = 3;
   static constexpr unsigned int kCommandCapacity = 64;
 
@@ -611,6 +612,12 @@ int chipnomadQueuePlaybackStartPhrase(ChipNomadState* state, int trackIdx, int s
 }
 int chipnomadQueuePlaybackStartPhraseRow(ChipNomadState* state, int trackIdx, const PhraseRow* row) {
   return state && state->audioCommands && row ? state->audioCommands->pushCommand(3, trackIdx, 0, 0, 0, row) : 0;
+}
+int chipnomadQueuePlaybackLiveChain(ChipNomadState* state, int trackIdx, int songRow, int chainRow) {
+  return state && state->audioCommands ? state->audioCommands->pushCommand(8, trackIdx, songRow, chainRow, 0) : 0;
+}
+int chipnomadQueuePlaybackLivePhraseCue(ChipNomadState* state, int trackIdx, int songRow, int chainRow) {
+  return state && state->audioCommands ? state->audioCommands->pushCommand(8, trackIdx, songRow, chainRow, 1) : 0;
 }
 int chipnomadQueuePlaybackQueuePhrase(ChipNomadState* state, int trackIdx, int songRow, int chainRow) {
   return state && state->audioCommands ? state->audioCommands->pushCommand(4, trackIdx, songRow, chainRow) : 0;

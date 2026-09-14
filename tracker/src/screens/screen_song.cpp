@@ -12,6 +12,7 @@
 
 // Screen state variables
 static uint16_t lastChainValue = 0;
+static int liveMode = 0;
 
 // Track mute/solo state machine
 typedef enum {
@@ -89,7 +90,7 @@ static int getColumnCount(int row) {
 
 static void drawStatic(void) {
   gfxSetFgColor(appSettings.colorScheme.textTitles);
-  gfxPrint(0, 0, "SONG");
+  gfxPrint(0, 0, liveMode ? "LIVE" : "SONG");
 }
 
 static void drawField(int col, int row, CellState state) {
@@ -147,11 +148,22 @@ static void fullRedraw(void) {
 static void draw(void) {
   for (int c = 0; c < chipnomadState->project.tracksCount; c++) {
     gfxClearRect(2 + c * 3, 3, 1, 16);
-    if (chipnomadGetPlaybackStatus(chipnomadState)->tracks[c].songRow != EMPTY_VALUE_16) {
-      int row = chipnomadGetPlaybackStatus(chipnomadState)->tracks[c].songRow - screen.topRow;
+    const PlaybackTrackState* track = &chipnomadGetPlaybackStatus(chipnomadState)->tracks[c];
+    if (track->songRow != EMPTY_VALUE_16) {
+      int row = track->songRow - screen.topRow;
       if (row >= 0 && row < 16) {
         gfxSetFgColor(appSettings.colorScheme.playMarkers);
         gfxPrint(2 + c * 3, 3 + row, ">");
+      }
+    }
+    // In LIVE mode a pending cue is shown with + for a Chain-boundary cue
+    // and * for a Phrase-boundary cue.
+    if (liveMode && track->queue.mode == PlaybackMode::live) {
+      int row = track->queue.songRow - screen.topRow;
+      if (row >= 0 && row < 16 && row != track->songRow - screen.topRow) {
+        gfxSetFgColor(appSettings.colorScheme.playMarkers);
+        gfxPrint(2 + c * 3, 3 + row,
+                 track->queue.liveCueMode == LiveCueMode::phrase ? "*" : "+");
       }
     }
 
@@ -333,6 +345,40 @@ static int onEdit(int col, int row, CellEditAction action) {
 
 static int onInput(int isKeyDown, int keys, int tapCount) {
   int handled = 0;
+
+  // LIVE mode is a Song-screen performance mode. Toggle it with
+  // SHIFT+OPT+PLAY. Entering/leaving LIVE stops the existing transport so
+  // that SONG and LIVE playback states cannot be mixed.
+  // LIVE mode controls:
+  //   SELECT+PLAY (Start+Select) toggles LIVE mode. Turning LIVE off stops
+  //   playback so the normal Song-screen transport is restored.
+  //   PLAY launches the Chain under the cursor, or queues it for the end of
+  //   the currently playing Chain.
+  //   B+PLAY (Opt+Play) launches/queues it at the end of the current Phrase.
+  // These transitions stay on the existing tracker clock; they do not
+  // interrupt the current row.
+  if (isKeyDown && keys == (keyShift | keyPlay)) {
+    liveMode = !liveMode;
+    if (!liveMode) {
+      chipnomadQueuePlaybackStop(chipnomadState);
+    }
+    fullRedraw();
+    return 1;
+  }
+
+  if (isKeyDown && liveMode && screen.selectMode == 0 &&
+      (keys == keyPlay || keys == (keyOpt | keyPlay))) {
+    int chain = chipnomadState->project.song[screen.cursorRow][screen.cursorCol];
+    if (chain != EMPTY_VALUE_16 &&
+        chipnomadState->project.chains[chain].rows[0].phrase != EMPTY_VALUE_16) {
+      if (keys == (keyOpt | keyPlay)) {
+        chipnomadQueuePlaybackLivePhraseCue(chipnomadState, screen.cursorCol, screen.cursorRow, 0);
+      } else {
+        chipnomadQueuePlaybackLiveChain(chipnomadState, screen.cursorCol, screen.cursorRow, 0);
+      }
+    }
+    return 1;
+  }
 
   // Only handle mute/solo when not in selection mode
   if (screen.selectMode == 0) {

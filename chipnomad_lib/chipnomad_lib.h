@@ -116,6 +116,8 @@ int chipnomadQueuePlaybackStartSong(ChipNomadState* state, int songRow, int chai
 int chipnomadQueuePlaybackStartChain(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop);
 int chipnomadQueuePlaybackStartPhrase(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop);
 int chipnomadQueuePlaybackStartPhraseRow(ChipNomadState* state, int trackIdx, const PhraseRow* row);
+int chipnomadQueuePlaybackLiveChain(ChipNomadState* state, int trackIdx, int songRow, int chainRow);
+int chipnomadQueuePlaybackLivePhraseCue(ChipNomadState* state, int trackIdx, int songRow, int chainRow);
 int chipnomadQueuePlaybackQueuePhrase(ChipNomadState* state, int trackIdx, int songRow, int chainRow);
 int chipnomadQueuePlaybackPreviewNote(ChipNomadState* state, int trackIdx, uint8_t note, uint8_t instrument);
 int chipnomadQueuePlaybackStopPreview(ChipNomadState* state, int trackIdx);

@@ -184,6 +184,111 @@ TEST_CASE_FIXTURE(PlaybackFixture, "instrument table FX applies on the trigger r
   CHECK(state->playbackState.tracks[0].note.fx[fxBCF].fxValue == 90);
 }
 
+TEST_CASE_FIXTURE(PlaybackFixture, "live playback queues the next chain at a chain boundary") {
+  Project* p = &state->project;
+  p->grooves[0].speed[0] = 1;
+
+  p->chains[0].rows[0].phrase = 0;
+  p->chains[1].rows[0].phrase = 1;
+  p->song[0][0] = 0;
+  p->song[1][0] = 1;
+
+  playbackLiveChain(&state->playbackState, 0, 0, 0);
+  advanceFrames(1);
+  REQUIRE(state->playbackState.tracks[0].mode == PlaybackMode::live);
+  CHECK(state->playbackState.tracks[0].songRow == 0);
+  CHECK(state->playbackState.tracks[0].chainRow == 0);
+
+  // Simulate the last row of the current phrase, then cue another chain.
+  state->playbackState.tracks[0].phraseRow = 15;
+  playbackLiveChain(&state->playbackState, 0, 1, 0);
+  CHECK(state->playbackState.tracks[0].queue.mode == PlaybackMode::live);
+
+  advanceFrames(1);
+
+  CHECK(state->playbackState.tracks[0].mode == PlaybackMode::live);
+  CHECK(state->playbackState.tracks[0].songRow == 1);
+  CHECK(state->playbackState.tracks[0].chainRow == 0);
+  CHECK(state->playbackState.tracks[0].phraseRow == 0);
+  CHECK(state->playbackState.tracks[0].queue.mode == PlaybackMode::none);
+}
+
+TEST_CASE_FIXTURE(PlaybackFixture, "live playback advances through multiple phrases before looping") {
+  Project* p = &state->project;
+  p->grooves[0].speed[0] = 1;
+  p->chains[0].rows[0].phrase = 0;
+  p->chains[0].rows[1].phrase = 1;
+  p->song[0][0] = 0;
+
+  playbackLiveChain(&state->playbackState, 0, 0, 0);
+  advanceFrames(1);
+  REQUIRE(state->playbackState.tracks[0].mode == PlaybackMode::live);
+
+  state->playbackState.tracks[0].phraseRow = 15;
+  state->playbackState.tracks[0].grooveRow = 0;
+  state->playbackState.tracks[0].speedPhase = 0;
+  advanceFrames(1);
+  CHECK(state->playbackState.tracks[0].chainRow == 1);
+  CHECK(state->playbackState.tracks[0].phraseRow == 0);
+
+  state->playbackState.tracks[0].phraseRow = 15;
+  state->playbackState.tracks[0].grooveRow = 0;
+  state->playbackState.tracks[0].speedPhase = 0;
+  advanceFrames(1);
+  CHECK(state->playbackState.tracks[0].chainRow == 0);
+  CHECK(state->playbackState.tracks[0].phraseRow == 0);
+}
+
+TEST_CASE_FIXTURE(PlaybackFixture, "live phrase cue switches at phrase boundary") {
+  Project* p = &state->project;
+  p->grooves[0].speed[0] = 1;
+  p->chains[0].rows[0].phrase = 0;
+  p->chains[0].rows[1].phrase = 1;
+  p->chains[1].rows[0].phrase = 2;
+  p->song[0][0] = 0;
+  p->song[1][0] = 1;
+
+  playbackLiveChain(&state->playbackState, 0, 0, 0);
+  advanceFrames(1);
+  REQUIRE(state->playbackState.tracks[0].mode == PlaybackMode::live);
+  CHECK(state->playbackState.tracks[0].chainRow == 0);
+
+  // Queue the second Chain as a phrase-boundary cue while Phrase 0 is
+  // playing. It must take over at the end of Phrase 0, rather than waiting
+  // for Phrase 1 / the end of Chain 0.
+  state->playbackState.tracks[0].phraseRow = 15;
+  playbackLiveChain(&state->playbackState, 0, 1, 0, LiveCueMode::phrase);
+  CHECK(state->playbackState.tracks[0].queue.mode == PlaybackMode::live);
+  CHECK(state->playbackState.tracks[0].queue.liveCueMode == LiveCueMode::phrase);
+
+  advanceFrames(1);
+
+  CHECK(state->playbackState.tracks[0].mode == PlaybackMode::live);
+  CHECK(state->playbackState.tracks[0].songRow == 1);
+  CHECK(state->playbackState.tracks[0].chainRow == 0);
+  CHECK(state->playbackState.tracks[0].phraseRow == 0);
+  CHECK(state->playbackState.tracks[0].queue.mode == PlaybackMode::none);
+}
+
+TEST_CASE_FIXTURE(PlaybackFixture, "live playback loops the current chain when no cue is pending") {
+  Project* p = &state->project;
+  p->grooves[0].speed[0] = 1;
+  p->chains[0].rows[0].phrase = 0;
+  p->song[0][0] = 0;
+
+  playbackLiveChain(&state->playbackState, 0, 0, 0);
+  advanceFrames(1);
+  REQUIRE(state->playbackState.tracks[0].mode == PlaybackMode::live);
+
+  state->playbackState.tracks[0].phraseRow = 15;
+  advanceFrames(1);
+
+  CHECK(state->playbackState.tracks[0].mode == PlaybackMode::live);
+  CHECK(state->playbackState.tracks[0].songRow == 0);
+  CHECK(state->playbackState.tracks[0].chainRow == 0);
+  CHECK(state->playbackState.tracks[0].phraseRow == 0);
+}
+
 TEST_CASE_FIXTURE(PlaybackFixture, "single note outputs to registers") {
   setInstrument(0, 15, 0, 15, 0);
 
