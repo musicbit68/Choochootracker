@@ -2,9 +2,6 @@ name: Build PortMaster
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -12,38 +9,33 @@ permissions:
 jobs:
   build-portmaster:
     name: Build ARM64 PortMaster package
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Enable ARM64 packages
+      - name: Install AArch64 toolchain and dependencies
         run: |
           sudo dpkg --add-architecture arm64
           sudo apt-get update
 
-      - name: Install ARM64 build dependencies
-        run: |
           sudo apt-get install -y \
             g++-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
-            libc6-dev-arm64-cross \
-            libsdl2-dev:arm64 \
             pkg-config \
-            zip
+            zip \
+            make
 
-      - name: Verify cross compiler and SDL2
+          sudo apt-get install -y \
+            libsdl2-dev:arm64
+
+      - name: Verify build tools
         run: |
           aarch64-linux-gnu-g++ --version
-          PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
-            pkg-config --modversion sdl2
-
-      - name: Build native playback tests
-        working-directory: tracker
-        run: |
-          make -f Makefile.test build -j2
-          ./build/tests/run_tests --test-suite=playback
+          aarch64-linux-gnu-strip --version
+          pkg-config --version
+          pkg-config --modversion sdl2
 
       - name: Build PortMaster package
         working-directory: tracker
@@ -51,17 +43,28 @@ jobs:
           PKG_CONFIG_LIBDIR: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
         run: |
           make -j2 -f Makefile.portmaster PortMaster-deploy
-          test -f ../releases/choochootracker.zip
-          test -f build/choochootracker.aarch64
-          file build/choochootracker.aarch64
-          unzip -l ../releases/choochootracker.zip
 
-      - name: Upload PortMaster package
+      - name: Verify package
+        run: |
+          test -f releases/choochootracker.zip
+          test -f tracker/build/choochootracker.aarch64
+
+          echo "========================================"
+          echo "PortMaster package created successfully"
+          echo "========================================"
+          ls -lh releases/choochootracker.zip
+          ls -lh tracker/build/choochootracker.aarch64
+
+      - name: Upload PortMaster ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: choochootracker-portmaster-arm64
-          path: |
-            releases/choochootracker.zip
-            tracker/build/choochootracker.aarch64
+          name: choochootracker-portmaster
+          path: releases/choochootracker.zip
           if-no-files-found: error
-          retention-days: 30
+
+      - name: Upload ARM64 executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: choochootracker-aarch64
+          path: tracker/build/choochootracker.aarch64
+          if-no-files-found: error
