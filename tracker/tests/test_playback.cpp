@@ -289,6 +289,86 @@ TEST_CASE_FIXTURE(PlaybackFixture, "live playback loops the current chain when n
   CHECK(state->playbackState.tracks[0].phraseRow == 0);
 }
 
+TEST_CASE_FIXTURE(PlaybackFixture, "live tracks share the 16-step downbeat") {
+  Project* p = &state->project;
+  p->chipsCount = 2;
+  p->tracksCount = 2;
+  chipnomadInitChips(state, 44100, mockChipFactory);
+  playbackInit(&state->playbackState, p);
+
+  p->grooves[0].speed[0] = 1;
+  p->grooves[0].speed[1] = 1;
+  p->chains[0].rows[0].phrase = 0;
+  p->chains[1].rows[0].phrase = 1;
+  p->song[0][0] = 0;
+  p->song[0][1] = 1;
+
+  // Start track 0 first. It becomes the shared LIVE timing anchor.
+  playbackLiveChain(&state->playbackState, 0, 0, 0);
+  advanceFrames(1);
+  REQUIRE(state->playbackState.tracks[0].mode == PlaybackMode::live);
+  CHECK(state->playbackState.liveSyncTrack == 0);
+
+  // Simulate track 0 at step 4. Track 1 is launched now; it must wait for
+  // the next shared downbeat rather than starting at its current audio frame.
+  state->playbackState.tracks[0].phraseRow = 4;
+  playbackLiveChain(&state->playbackState, 1, 0, 0);
+  CHECK(state->playbackState.tracks[1].mode == PlaybackMode::stopped);
+  CHECK(state->playbackState.tracks[1].queue.mode == PlaybackMode::live);
+
+  // Bring the anchor to the end of its phrase. The next frame is the shared
+  // downbeat, and both tracks must be at phrase row 0.
+  state->playbackState.tracks[0].phraseRow = 15;
+  state->playbackState.tracks[0].grooveRow = 0;
+  state->playbackState.tracks[0].speedPhase = 0;
+  advanceFrames(1);
+
+  CHECK(state->playbackState.tracks[0].phraseRow == 0);
+  CHECK(state->playbackState.tracks[1].mode == PlaybackMode::live);
+  CHECK(state->playbackState.tracks[1].phraseRow == 0);
+}
+
+TEST_CASE_FIXTURE(PlaybackFixture, "live phrase cue lands on the shared downbeat") {
+  Project* p = &state->project;
+  p->chipsCount = 2;
+  p->tracksCount = 2;
+  chipnomadInitChips(state, 44100, mockChipFactory);
+  playbackInit(&state->playbackState, p);
+
+  p->grooves[0].speed[0] = 1;
+  p->chains[0].rows[0].phrase = 0;
+  p->chains[1].rows[0].phrase = 1;
+  p->song[0][0] = 0;
+  p->song[0][1] = 0;
+  p->song[1][1] = 1;
+
+  playbackLiveChain(&state->playbackState, 0, 0, 0);
+  advanceFrames(1);
+  REQUIRE(state->playbackState.tracks[0].mode == PlaybackMode::live);
+
+  // Track 1 is deliberately out of phase. A phrase cue must wait for the
+  // shared downbeat instead of firing when track 1 reaches its own row 15.
+  state->playbackState.tracks[0].phraseRow = 15;
+  state->playbackState.tracks[1].mode = PlaybackMode::live;
+  state->playbackState.tracks[1].songRow = 0;
+  state->playbackState.tracks[1].chainRow = 0;
+  state->playbackState.tracks[1].phraseRow = 11;
+  state->playbackState.tracks[1].loop = 1;
+  playbackLiveChain(&state->playbackState, 1, 1, 0, LiveCueMode::phrase);
+  REQUIRE(state->playbackState.tracks[1].queue.mode == PlaybackMode::live);
+  REQUIRE(state->playbackState.tracks[1].queue.liveCueMode == LiveCueMode::phrase);
+
+  state->playbackState.tracks[0].grooveRow = 0;
+  state->playbackState.tracks[0].speedPhase = 0;
+  advanceFrames(1);
+
+  CHECK(state->playbackState.tracks[0].phraseRow == 0);
+  CHECK(state->playbackState.tracks[1].songRow == 1);
+  CHECK(state->playbackState.tracks[1].chainRow == 0);
+  CHECK(state->playbackState.tracks[1].phraseRow == 0);
+  CHECK(state->playbackState.tracks[1].queue.mode == PlaybackMode::none);
+}
+
 TEST_CASE_FIXTURE(PlaybackFixture, "single note outputs to registers") {
   setInstrument(0, 15, 0, 15, 0);
 

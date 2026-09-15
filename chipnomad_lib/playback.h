@@ -133,6 +133,12 @@ struct PlaybackState {
   float liveStickAxes[4];
   int16_t liveStickRate[PROJECT_MAX_INSTRUMENTS][4];
   uint8_t liveStickWasPlaying;
+
+  // Shared LIVE downbeat. The lowest active LIVE track is the timing anchor.
+  // A phrase boundary on that track is the common 16-step downbeat used to
+  // quantize LIVE launches and phrase cues on the other tracks.
+  int liveSyncTrack;
+  uint8_t liveSyncBoundary;
 };
 
 // FX typedefs

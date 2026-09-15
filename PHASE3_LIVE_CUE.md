@@ -25,12 +25,15 @@ A new cue replaces any existing cue for that track.
 
 ## Timing
 
-No independent timer or playback clock is introduced. Both cue types are handled by the existing tracker frame/sequencer path:
+LIVE mode uses the existing tracker frame/sequencer clock; no independent audio timer is introduced. LIVE columns share a 16-step musical downbeat:
 
-- Phrase cue is consumed at the existing phrase boundary.
-- Chain cue is consumed only when the current Chain has no further Chain rows.
+- The first active LIVE column becomes the timing anchor.
+- New LIVE columns wait for the next shared downbeat instead of starting at an arbitrary phrase row.
+- Phrase cues switch at the shared 16-step downbeat.
+- Normal Chain cues still wait for the end of the currently playing Chain, but the transition is quantized to the shared downbeat.
+- If a column was started or cued while another column was already part-way through a phrase, it is aligned to phrase row `0` on the next shared downbeat.
 
-The selected LIVE Chain now correctly advances through all phrases in the Chain before looping. This also fixes the Phase 2 behavior that would otherwise restart at Chain row 0 at every phrase boundary.
+The selected LIVE Chain correctly advances through all of its Chain rows before looping. This preserves the intended independent Chain selection per column while keeping the columns musically aligned.
 
 ## Notes
 

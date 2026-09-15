@@ -833,6 +833,7 @@ static int activateLiveQueue(PlaybackState* state, int trackIdx) {
   track->songRow = track->queue.songRow;
   track->chainRow = track->queue.chainRow;
   track->phraseRow = 0;
+  if (state->liveSyncTrack < 0) state->liveSyncTrack = trackIdx;
   track->loop = 1;
   track->queue.mode = PlaybackMode::none;
   resetTrackFXAuxState(state, trackIdx);
@@ -864,6 +865,9 @@ static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
   if (track->phraseRow >= 16) {
     track->phraseRow = 0;
     enteredPhrase = 1;
+    if (track->mode == PlaybackMode::live && trackIdx == state->liveSyncTrack) {
+      state->liveSyncBoundary = 1;
+    }
 
     // Check chain-level loop after phrase overflow
     if (state->loopRange.enabled && state->loopRange.level == 1 && track->loop &&
@@ -949,7 +953,7 @@ static int moveToNextPhraseRow(PlaybackState* state, int trackIdx) {
           if (chainRow >= 16 || p->chains[chain].rows[chainRow].phrase == EMPTY_VALUE_16) {
             // The current Chain has ended. A normal cue gets priority over
             // looping back to its first Chain row.
-            if (activateLiveQueue(state, trackIdx)) {
+            if (state->liveSyncBoundary && activateLiveQueue(state, trackIdx)) {
               enteredChain = 1;
             } else {
               track->chainRow = 0;
@@ -1028,6 +1032,8 @@ void playbackInit(PlaybackState* state, Project* project) {
   memset(state->liveStickAxes, 0, sizeof(state->liveStickAxes));
   resetLiveStickRate(state);
   state->liveStickWasPlaying = 0;
+  state->liveSyncTrack = -1;
+  state->liveSyncBoundary = 0;
 
   initFXHandlers();
   initAYSampleTables();
@@ -1036,6 +1042,7 @@ void playbackInit(PlaybackState* state, Project* project) {
     resetTrack(state, c);
     state->tracks[c].queue.mode = PlaybackMode::none;
     state->tracks[c].queue.loop = 0;
+    state->tracks[c].queue.liveCueMode = LiveCueMode::chain;
     state->trackEnabled[c] = 1;
   }
 
@@ -1187,6 +1194,9 @@ void playbackStop(PlaybackState* state) {
     resetTrack(state, c);
     state->tracks[c].queue.mode = PlaybackMode::none;
   }
+  state->liveSyncTrack = -1;
+  state->liveSyncBoundary = 0;
+
   // TODO: Move to AY-specific code when other chip types are added
   // Reset chip states to ensure envelope shapes retrigger on next playback
   for (int c = 0; c < PROJECT_MAX_CHIPS; c++) {
@@ -1205,6 +1215,22 @@ int playbackNextFrame(ChipNomadState* chipNomadState) {
   Project* p = &chipNomadState->project;
   int hasActiveTracks = 0;
 
+  // Pick the lowest active LIVE track as the shared timing anchor. This is
+  // deliberately recomputed when the old anchor stops, so LIVE mode can
+  // recover cleanly if a track is removed.
+  state->liveSyncBoundary = 0;
+  if (state->liveSyncTrack < 0 ||
+      state->liveSyncTrack >= state->p->tracksCount ||
+      state->tracks[state->liveSyncTrack].mode != PlaybackMode::live) {
+    state->liveSyncTrack = -1;
+    for (int i = 0; i < state->p->tracksCount; ++i) {
+      if (state->tracks[i].mode == PlaybackMode::live) {
+        state->liveSyncTrack = i;
+        break;
+      }
+    }
+  }
+
   int chipIdx = 0;
   int chipTracksCount = projectGetChipTracks(p, chipIdx);
   int nextChipTrackIdx = chipTracksCount;
@@ -1221,9 +1247,15 @@ int playbackNextFrame(ChipNomadState* chipNomadState) {
     PlaybackTrackState* track = &state->tracks[trackIdx];
 
     // Check queued play event for stopped track or when a track is in phrase row playback mode
-    if ((track->mode == PlaybackMode::stopped && track->queue.mode != PlaybackMode::none) ||
+    int liveQueueCanStart = track->queue.mode != PlaybackMode::live ||
+      state->liveSyncTrack < 0 || state->liveSyncBoundary;
+    if (((track->mode == PlaybackMode::stopped && track->queue.mode != PlaybackMode::none) &&
+         liveQueueCanStart) ||
     (track->mode == PlaybackMode::phraseRow && track->queue.mode == PlaybackMode::phraseRow)) {
       track->mode = track->queue.mode;
+      if (track->mode == PlaybackMode::live && state->liveSyncTrack < 0) {
+        state->liveSyncTrack = trackIdx;
+      }
       track->songRow = track->queue.songRow;
       track->chainRow = track->queue.chainRow;
       track->phraseRow = track->queue.phraseRow;
@@ -1292,6 +1324,36 @@ int playbackNextFrame(ChipNomadState* chipNomadState) {
       track->mode = PlaybackMode::stopped;
     } else {
       hasActiveTracks = 1;
+    }
+  }
+
+  // A LIVE phrase is a 16-step musical unit. When the anchor reaches row 0,
+  // make every active LIVE track land on that same downbeat. Tracks that were
+  // started/cued late may have been at a different row; they are intentionally
+  // snapped here rather than waiting for their private phrase boundary.
+  // Normal chain cues still obey chain boundaries; phrase cues are consumed
+  // on this shared boundary.
+  if (state->liveSyncBoundary) {
+    for (int trackIdx = 0; trackIdx < state->p->tracksCount; ++trackIdx) {
+      PlaybackTrackState* liveTrack = &state->tracks[trackIdx];
+      if (liveTrack->mode != PlaybackMode::live ||
+          liveTrack->songRow == EMPTY_VALUE_16) continue;
+
+      if (liveTrack->queue.mode == PlaybackMode::live &&
+          liveTrack->queue.liveCueMode == LiveCueMode::phrase) {
+        activateLiveQueue(state, trackIdx);
+        continue;
+      }
+
+      // The anchor already wrapped through moveToNextPhraseRow(). For every
+      // other LIVE track, advance its phrase to the shared row 0 without
+      // inventing another clock. If it was already at 0, leave it alone.
+      if (trackIdx != state->liveSyncTrack && liveTrack->phraseRow != 0) {
+        liveTrack->phraseRow = 0;
+        resetTrackFXAuxState(state, trackIdx);
+        restartStructuralLFOs(state, trackIdx, 1, 0);
+        readPhraseRow(state, trackIdx, 0);
+      }
     }
   }
 
