@@ -1,0 +1,78 @@
+name: Build PortMaster
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-portmaster:
+    name: Build PortMaster ARM64 package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pull PortMaster AArch64 build environment
+        run: |
+          docker pull \
+            --platform=linux/arm64 \
+            ghcr.io/monkeyx-net/portmaster-build-templates/portmaster-builder:aarch64-latest
+
+      - name: Build PortMaster package
+        run: |
+          docker run --rm \
+            --platform=linux/arm64 \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            ghcr.io/monkeyx-net/portmaster-build-templates/portmaster-builder:aarch64-latest \
+            bash -c '
+              set -e
+
+              echo "========================================"
+              echo "PortMaster AArch64 build environment"
+              echo "========================================"
+
+              uname -m
+              gcc --version
+              g++ --version
+
+              echo
+              echo "========================================"
+              echo "Building ChooChooTracker"
+              echo "========================================"
+
+              cd /workspace/tracker
+
+              make -j2 -f Makefile.portmaster PortMaster-deploy
+            '
+
+      - name: Verify PortMaster package
+        run: |
+          echo "Checking build output..."
+
+          test -f releases/choochootracker.zip
+
+          echo
+          echo "========================================"
+          echo "BUILD SUCCESSFUL"
+          echo "========================================"
+
+          ls -lh releases/choochootracker.zip
+
+      - name: Upload PortMaster package
+        uses: actions/upload-artifact@v4
+        with:
+          name: choochootracker-portmaster
+          path: releases/choochootracker.zip
+          if-no-files-found: error
